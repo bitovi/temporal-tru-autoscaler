@@ -1,0 +1,32 @@
+# Compiled binaries
+bin/
+
+# Go test artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Packaged Helm charts (generated during release)
+*.tgz
+
+# kubebuilder envtest binaries (if added later)
+testbin/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code — local machine settings and agent memory are not project state
+.claude/settings.local.json
+.claude/agent-memory/
+
+# Environment / secrets (never commit these)
+.env
+.env.*
+
+# Doc output (generated)
+doc

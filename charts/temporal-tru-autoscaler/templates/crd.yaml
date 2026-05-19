@@ -1,0 +1,156 @@
+{{- /*
+  CRD is always installed as part of the chart.
+  If you manage CRDs separately (e.g. via a CRD-only chart or GitOps tooling),
+  set crds.install=false in your values override.
+*/}}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: temporaltruautoscalers.temporal.bitovi.com
+  labels:
+    {{- include "temporal-tru-autoscaler.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/resource-policy": keep
+spec:
+  group: temporal.bitovi.com
+  names:
+    kind: TemporalTRUAutoscaler
+    listKind: TemporalTRUAutoscalerList
+    plural: temporaltruautoscalers
+    singular: temporaltruautoscaler
+    shortNames:
+      - ttautoscaler
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Namespace
+          type: string
+          jsonPath: .spec.temporalNamespace
+        - name: MinTRU
+          type: integer
+          jsonPath: .spec.minTRU
+        - name: MaxTRU
+          type: integer
+          jsonPath: .spec.maxTRU
+        - name: CurrentTRU
+          type: integer
+          jsonPath: .status.currentTRU
+        - name: LastScale
+          type: string
+          jsonPath: .status.lastScaleTime
+        - name: Direction
+          type: string
+          jsonPath: .status.lastScaleDirection
+      schema:
+        openAPIV3Schema:
+          description: >
+            TemporalTRUAutoscaler watches APS utilization from the Temporal Cloud
+            metrics endpoint and automatically scales TRU levels up or down.
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - temporalNamespace
+                - credentialsSecretRef
+                - minTRU
+                - maxTRU
+              properties:
+                temporalNamespace:
+                  type: string
+                  minLength: 1
+                credentialsSecretRef:
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                minTRU:
+                  type: integer
+                  minimum: 1
+                maxTRU:
+                  type: integer
+                  minimum: 1
+                scaleUpThreshold:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 70
+                scaleDownThreshold:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 70
+                scaleUpCooldown:
+                  type: string
+                  default: "5m"
+                scaleDownCooldown:
+                  type: string
+                  default: "1h"
+            status:
+              type: object
+              properties:
+                currentTRU:
+                  type: integer
+                lastScaleTime:
+                  type: string
+                  format: date-time
+                lastScaleDirection:
+                  type: string
+                  enum:
+                    - Up
+                    - Down
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    properties:
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      message:
+                        type: string
+                        maxLength: 32768
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      reason:
+                        type: string
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: '^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$'
+                      status:
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                      type:
+                        type: string
+                        maxLength: 316
+                        pattern: '^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map

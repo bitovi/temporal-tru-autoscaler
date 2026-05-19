@@ -1,0 +1,65 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: temporal-tru-autoscaler
+  labels:
+    app.kubernetes.io/name: temporal-tru-autoscaler
+    app.kubernetes.io/component: controller
+rules:
+  # Manage TemporalTRUAutoscaler resources and their status.
+  - apiGroups:
+      - temporal.bitovi.com
+    resources:
+      - temporaltruautoscalers
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - temporal.bitovi.com
+    resources:
+      - temporaltruautoscalers/status
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - temporal.bitovi.com
+    resources:
+      - temporaltruautoscalers/finalizers
+    verbs:
+      - update
+  # Read Secrets (for API key).
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  # Emit Kubernetes Events.
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  # Leader election (when enabled).
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete

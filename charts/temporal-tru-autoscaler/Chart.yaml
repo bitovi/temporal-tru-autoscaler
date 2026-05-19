@@ -1,0 +1,19 @@
+apiVersion: v2
+name: temporal-tru-autoscaler
+description: >
+  A Kubernetes controller that watches APS utilization from the Temporal Cloud
+  metrics endpoint and automatically scales TRU levels up or down.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - temporal
+  - autoscaler
+  - tru
+  - kubernetes
+home: https://github.com/bitovi/temporal-tru-autoscaler
+sources:
+  - https://github.com/bitovi/temporal-tru-autoscaler
+maintainers:
+  - name: Bitovi
+    email: oss@bitovi.com

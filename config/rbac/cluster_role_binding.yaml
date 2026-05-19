@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: temporal-tru-autoscaler
+  labels:
+    app.kubernetes.io/name: temporal-tru-autoscaler
+    app.kubernetes.io/component: controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: temporal-tru-autoscaler
+subjects:
+  - kind: ServiceAccount
+    name: temporal-tru-autoscaler
+    namespace: temporal-autoscaler

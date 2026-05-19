@@ -1,0 +1,47 @@
+---
+# Example TemporalTRUAutoscaler resource.
+# Deploy after installing the chart and creating the credentials Secret.
+apiVersion: temporal.bitovi.com/v1alpha1
+kind: TemporalTRUAutoscaler
+metadata:
+  name: my-namespace-autoscaler
+  namespace: temporal-autoscaler
+spec:
+  # The Temporal Cloud namespace to manage. Format: name.accountId
+  temporalNamespace: my-temporal-namespace.a1b2c3
+
+  # Reference to the Secret containing the Temporal Cloud API key.
+  credentialsSecretRef:
+    name: temporal-cloud-api-key
+
+  # TRU bounds — the controller will never scale outside this range.
+  minTRU: 5
+  maxTRU: 50
+
+  # Scale up when utilization exceeds 70% of the current tier's APS ceiling.
+  scaleUpThreshold: 70
+
+  # Scale down when utilization drops below 70% of the current tier's APS ceiling
+  # and stays there for the full scaleDownCooldown window.
+  scaleDownThreshold: 70
+
+  # React to capacity pressure quickly.
+  scaleUpCooldown: 5m
+
+  # Wait a full hour before scaling down to avoid billing waste
+  # (Temporal Cloud charges for the full hour after any TRU change).
+  scaleDownCooldown: 1h
+---
+# Credentials Secret — create this before applying the TemporalTRUAutoscaler.
+# Store the Temporal Cloud API key in the "apiKey" field.
+# Optionally store your account ID in "accountId" (can also be extracted from
+# the namespace name if it uses the name.accountId format).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: temporal-cloud-api-key
+  namespace: temporal-autoscaler
+type: Opaque
+stringData:
+  apiKey: <your-temporal-cloud-api-key>
+  # accountId: <your-temporal-cloud-account-id>  # optional
