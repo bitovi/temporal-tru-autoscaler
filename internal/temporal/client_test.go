@@ -153,10 +153,10 @@ func TestGetNamespaceInfo_Provisioned(t *testing.T) {
 		}
 		resp := map[string]any{
 			"namespace": map[string]any{
-				"name":             "my-ns",
-				"resource_version": "abc123",
+				"name":            "my-ns",
+				"resourceVersion": "abc123",
 				"spec": map[string]any{
-					"capacity_spec": map[string]any{
+					"capacitySpec": map[string]any{
 						"provisioned": map[string]any{
 							"value": 4.0,
 						},
@@ -186,10 +186,10 @@ func TestGetNamespaceInfo_OnDemand(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
 			"namespace": map[string]any{
-				"name":             "my-ns",
-				"resource_version": "v1",
+				"name":            "my-ns",
+				"resourceVersion": "v1",
 				"spec": map[string]any{
-					"capacity_spec": map[string]any{
+					"capacitySpec": map[string]any{
 						// provisioned is absent — on-demand mode
 					},
 				},
@@ -233,16 +233,16 @@ func TestSetTRU_SendsCorrectRequest(t *testing.T) {
 		callCount++
 		switch callCount {
 		case 1:
-			// First call: GET to read resource_version.
+			// First call: GET to read resourceVersion.
 			if r.Method != http.MethodGet {
 				t.Errorf("call 1: want GET, got %s", r.Method)
 			}
 			resp := map[string]any{
 				"namespace": map[string]any{
-					"name":             "my-ns",
-					"resource_version": wantResourceVersion,
+					"name":            "my-ns",
+					"resourceVersion": wantResourceVersion,
 					"spec": map[string]any{
-						"capacity_spec": map[string]any{
+						"capacitySpec": map[string]any{
 							"provisioned": map[string]any{"value": 4.0},
 						},
 					},
@@ -288,10 +288,10 @@ func TestSetTRU_APIError(t *testing.T) {
 			// GET succeeds.
 			resp := map[string]any{
 				"namespace": map[string]any{
-					"name":             "my-ns",
-					"resource_version": "rv1",
+					"name":            "my-ns",
+					"resourceVersion": "rv1",
 					"spec": map[string]any{
-						"capacity_spec": map[string]any{
+						"capacitySpec": map[string]any{
 							"provisioned": map[string]any{"value": 4.0},
 						},
 					},
@@ -361,11 +361,13 @@ func TestGetCurrentAPS_MetricsEndpointError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func newTestClient(apiBaseURL string) *Client {
+	hc := &http.Client{}
 	return &Client{
-		httpClient:     &http.Client{},
-		apiKey:         "test-key",
-		accountID:      "test-account",
-		apiBaseURL:     apiBaseURL,
-		metricsBaseURL: apiBaseURL, // overridden per-test when needed
+		httpClient:        hc,
+		metricsHTTPClient: hc,
+		apiKey:            "test-key",
+		accountID:         "test-account",
+		apiBaseURL:        apiBaseURL,
+		metricsBaseURL:    apiBaseURL, // overridden per-test when needed
 	}
 }

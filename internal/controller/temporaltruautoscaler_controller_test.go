@@ -115,7 +115,7 @@ func buildReconciler(
 		Recorder:            record.NewFakeRecorder(32),
 		ControllerNamespace: "default",
 		ReconcileInterval:   30 * time.Second,
-		NewTemporalClient: func(_, _ string) temporal.Interface {
+		NewTemporalClient: func(_, _ string, _, _ []byte) temporal.Interface {
 			return mock
 		},
 	}

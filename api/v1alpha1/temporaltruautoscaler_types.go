@@ -23,6 +23,15 @@ type TemporalTRUAutoscalerSpec struct {
 	// +kubebuilder:validation:Required
 	CredentialsSecretRef SecretReference `json:"credentialsSecretRef"`
 
+	// ObservabilitySecretRef optionally references a Kubernetes Secret containing
+	// mTLS credentials for the Temporal Cloud metrics endpoint (keys: "clientCert"
+	// and "clientKey", both PEM-encoded). Required for Temporal Cloud accounts that
+	// have an observability CA certificate configured (Settings → Observability).
+	// When absent, the controller authenticates to the metrics endpoint using the
+	// API key (Bearer token), which works for accounts without a CA cert configured.
+	// +optional
+	ObservabilitySecretRef *SecretReference `json:"observabilitySecretRef,omitempty"`
+
 	// MinTRU is the minimum TRU level; the controller will never scale below this.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Minimum=1

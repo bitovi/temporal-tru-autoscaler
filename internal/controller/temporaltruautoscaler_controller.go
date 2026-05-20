@@ -62,8 +62,10 @@ type TemporalTRUAutoscalerReconciler struct {
 	// Secrets are read from this namespace.
 	ControllerNamespace string
 	// NewTemporalClient constructs a Temporal Cloud client. Defaults to
-	// temporal.NewClient; override in tests to inject a mock.
-	NewTemporalClient func(apiKey, accountID string) temporal.Interface
+	// temporal.NewClient (API key auth) or temporal.NewClientWithMTLS when certs
+	// are present; override in tests to inject a mock.
+	// tlsCert and tlsKey are PEM-encoded; both must be non-nil to enable mTLS.
+	NewTemporalClient func(apiKey, accountID string, tlsCert, tlsKey []byte) temporal.Interface
 }
 
 // Reconcile implements the main reconciliation loop for TemporalTRUAutoscaler.
@@ -96,7 +98,20 @@ func (r *TemporalTRUAutoscalerReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{RequeueAfter: r.reconcileInterval()}, nil
 	}
 
-	temporalClient := r.newTemporalClient(apiKey, accountID)
+	// Read optional observability mTLS creds (for accounts with CA cert configured).
+	tlsCert, tlsKey, err := r.readObservabilityCreds(ctx, autoscaler)
+	if err != nil {
+		logger.Error(err, "failed to read observability secret",
+			"secret", autoscaler.Spec.ObservabilitySecretRef.Name)
+		r.Recorder.Eventf(autoscaler, corev1.EventTypeWarning, reasonAPIError,
+			"Failed to read observability secret %q: %v", autoscaler.Spec.ObservabilitySecretRef.Name, err)
+		setCondition(&autoscaler.Status, conditionReady, metav1.ConditionFalse,
+			"CredentialsError", fmt.Sprintf("cannot read observability secret: %v", err))
+		_ = r.patchStatus(ctx, autoscaler, original)
+		return ctrl.Result{RequeueAfter: r.reconcileInterval()}, nil
+	}
+
+	temporalClient := r.newTemporalClient(apiKey, accountID, tlsCert, tlsKey)
 
 	// 3. Fetch current TRU level from the Temporal Cloud API.
 	nsInfo, err := temporalClient.GetNamespaceInfo(ctx, autoscaler.Spec.TemporalNamespace)
@@ -339,6 +354,32 @@ func (r *TemporalTRUAutoscalerReconciler) readCredentials(
 	return strings.TrimSpace(string(apiKey)), accountID, nil
 }
 
+// readObservabilityCreds reads the optional mTLS client cert and key for the metrics
+// endpoint. Returns nil slices (no error) when ObservabilitySecretRef is not set.
+func (r *TemporalTRUAutoscalerReconciler) readObservabilityCreds(
+	ctx context.Context,
+	autoscaler *temporalv1alpha1.TemporalTRUAutoscaler,
+) (certPEM, keyPEM []byte, err error) {
+	if autoscaler.Spec.ObservabilitySecretRef == nil {
+		return nil, nil, nil
+	}
+	secret := &corev1.Secret{}
+	secretKey := types.NamespacedName{
+		Namespace: r.ControllerNamespace,
+		Name:      autoscaler.Spec.ObservabilitySecretRef.Name,
+	}
+	if err := r.Get(ctx, secretKey, secret); err != nil {
+		return nil, nil, fmt.Errorf("get observability secret %s/%s: %w", secretKey.Namespace, secretKey.Name, err)
+	}
+	certPEM = secret.Data["clientCert"]
+	keyPEM = secret.Data["clientKey"]
+	if len(certPEM) == 0 || len(keyPEM) == 0 {
+		return nil, nil, fmt.Errorf("observability secret %s/%s must contain 'clientCert' and 'clientKey'",
+			secretKey.Namespace, secretKey.Name)
+	}
+	return certPEM, keyPEM, nil
+}
+
 // patchStatus applies a status-only patch to avoid overwriting the spec.
 func (r *TemporalTRUAutoscalerReconciler) patchStatus(
 	ctx context.Context,
@@ -347,10 +388,18 @@ func (r *TemporalTRUAutoscalerReconciler) patchStatus(
 	return r.Status().Patch(ctx, autoscaler, client.MergeFrom(original))
 }
 
-// newTemporalClient invokes the configurable factory, defaulting to temporal.NewClient.
-func (r *TemporalTRUAutoscalerReconciler) newTemporalClient(apiKey, accountID string) temporal.Interface {
+// newTemporalClient invokes the configurable factory. When tlsCert and tlsKey are
+// both non-nil it uses mTLS for the metrics endpoint; otherwise API key auth.
+func (r *TemporalTRUAutoscalerReconciler) newTemporalClient(apiKey, accountID string, tlsCert, tlsKey []byte) temporal.Interface {
 	if r.NewTemporalClient != nil {
-		return r.NewTemporalClient(apiKey, accountID)
+		return r.NewTemporalClient(apiKey, accountID, tlsCert, tlsKey)
+	}
+	if len(tlsCert) > 0 && len(tlsKey) > 0 {
+		c, err := temporal.NewClientWithMTLS(apiKey, accountID, tlsCert, tlsKey)
+		if err == nil {
+			return c
+		}
+		// Fall through to plain API key client if cert parse fails.
 	}
 	return temporal.NewClient(apiKey, accountID)
 }
