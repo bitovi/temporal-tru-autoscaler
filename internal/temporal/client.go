@@ -299,10 +299,9 @@ func (c *Client) GetCurrentAPS(ctx context.Context, namespace string) (float64, 
 
 // getCurrentAPSViaOpenMetrics fetches APS from the global OpenMetrics v1 endpoint.
 func (c *Client) getCurrentAPSViaOpenMetrics(ctx context.Context, namespace string) (float64, error) {
-	url := fmt.Sprintf("%s?namespace=%s", c.metricsBaseURL, namespace)
-	if c.accountID != "" {
-		url = fmt.Sprintf("%s&account_id=%s", url, c.accountID)
-	}
+	// The v1 endpoint does not filter by namespace server-side; we filter by
+	// the temporal_namespace label in parseAPSFromMetrics instead.
+	url := c.metricsBaseURL
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -427,14 +426,16 @@ func parseAPSFromMetrics(r io.Reader, namespace string) (float64, error) {
 	return totalAPS, nil
 }
 
-// metricMatchesNamespace returns true if the metric has a "namespace" label equal
-// to the given value, or if no namespace label is present (endpoint is pre-filtered).
+// metricMatchesNamespace returns true if the metric's temporal_namespace label
+// matches the given namespace, or if no namespace label is present at all.
+// The v1 endpoint uses "temporal_namespace" (not "namespace").
 func metricMatchesNamespace(m *dto.Metric, namespace string) bool {
 	for _, lp := range m.GetLabel() {
-		if lp.GetName() == "namespace" {
+		if lp.GetName() == "temporal_namespace" {
 			return lp.GetValue() == namespace
 		}
 	}
+	// No temporal_namespace label present — include the metric.
 	return true
 }
 
