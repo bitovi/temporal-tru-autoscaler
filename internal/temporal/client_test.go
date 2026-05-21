@@ -94,10 +94,11 @@ func TestParseAPSFromMetrics_Gauge(t *testing.T) {
 }
 
 func TestParseAPSFromMetrics_FiltersOtherNamespace(t *testing.T) {
+	// The v1 endpoint uses "temporal_namespace" (not "namespace") as the label.
 	body := fmt.Sprintf(`# HELP %s Total actions per second
 # TYPE %s gauge
-%s{namespace="other-ns"} 999.0
-%s{namespace="my-ns"} 42.0
+%s{temporal_namespace="other-ns"} 999.0
+%s{temporal_namespace="my-ns"} 42.0
 `, apsMetricName, apsMetricName, apsMetricName, apsMetricName)
 
 	got, err := parseAPSFromMetrics(strings.NewReader(body), "my-ns")
@@ -242,6 +243,9 @@ func TestSetTRU_SendsCorrectRequest(t *testing.T) {
 					"name":            "my-ns",
 					"resourceVersion": wantResourceVersion,
 					"spec": map[string]any{
+						"name":          "my-ns",
+						"retentionDays": 30,
+						"regions":       []string{"aws-us-east-1"},
 						"capacitySpec": map[string]any{
 							"provisioned": map[string]any{"value": 4.0},
 						},
@@ -256,15 +260,19 @@ func TestSetTRU_SendsCorrectRequest(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Errorf("call 2: want POST, got %s", r.Method)
 			}
-			var body updateNamespacePayload
+			// SetTRU now sends the full spec as a generic map to preserve all fields.
+			var body map[string]interface{}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Errorf("decoding body: %v", err)
 			}
-			if body.ResourceVersion != wantResourceVersion {
-				t.Errorf("resource_version = %q, want %q", body.ResourceVersion, wantResourceVersion)
+			if rv, _ := body["resourceVersion"].(string); rv != wantResourceVersion {
+				t.Errorf("resource_version = %q, want %q", rv, wantResourceVersion)
 			}
-			if body.Spec.CapacitySpec.Provisioned.Value != wantTRU {
-				t.Errorf("provisioned.value = %.0f, want %d", body.Spec.CapacitySpec.Provisioned.Value, wantTRU)
+			spec, _ := body["spec"].(map[string]interface{})
+			capacitySpec, _ := spec["capacitySpec"].(map[string]interface{})
+			provisioned, _ := capacitySpec["provisioned"].(map[string]interface{})
+			if v, _ := provisioned["value"].(float64); v != wantTRU {
+				t.Errorf("provisioned.value = %.0f, want %d", v, wantTRU)
 			}
 			w.WriteHeader(http.StatusAccepted)
 		}
@@ -318,14 +326,17 @@ func TestSetTRU_APIError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetCurrentAPS(t *testing.T) {
+	// The v1 endpoint uses "temporal_namespace" labels; no server-side query params.
 	metricBody := fmt.Sprintf(`# HELP %s Total actions per second
 # TYPE %s gauge
-%s{namespace="my-ns"} 750.0
-`, apsMetricName, apsMetricName, apsMetricName)
+%s{temporal_account="acct1",temporal_namespace="other-ns"} 100.0
+%s{temporal_account="acct1",temporal_namespace="my-ns"} 750.0
+`, apsMetricName, apsMetricName, apsMetricName, apsMetricName)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("namespace") != "my-ns" {
-			t.Errorf("missing or wrong namespace query param: %s", r.URL.RawQuery)
+		// The v1 endpoint does not receive namespace query params — verify none are sent.
+		if r.URL.RawQuery != "" {
+			t.Errorf("unexpected query params on metrics request: %s", r.URL.RawQuery)
 		}
 		fmt.Fprint(w, metricBody)
 	}))

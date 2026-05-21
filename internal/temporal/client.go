@@ -215,68 +215,77 @@ func (c *Client) GetNamespaceInfo(ctx context.Context, namespace string) (*Names
 	}, nil
 }
 
-// updateNamespacePayload is the JSON body for POST /cloud/namespaces/{namespace}.
-// resource_version is mandatory for optimistic concurrency control.
-type updateNamespacePayload struct {
-	Spec            updateNamespaceSpec `json:"spec"`
-	ResourceVersion string              `json:"resourceVersion"`
-}
-
-type updateNamespaceSpec struct {
-	CapacitySpec updateCapacitySpec `json:"capacitySpec"`
-}
-
-type updateCapacitySpec struct {
-	Provisioned updateProvisioned `json:"provisioned"`
-}
-
-type updateProvisioned struct {
-	// Value is the number of TRUs to provision (must be a valid TRU increment).
-	Value float64 `json:"value"`
-}
-
 // SetTRU updates the TRU level for a namespace via the Temporal Cloud API.
-// It fetches the current resource_version first (required for optimistic concurrency).
+// It fetches the current namespace spec first, updates only the capacity field,
+// and POSTs the full spec back — required because the API replaces the entire spec,
+// and omitting fields like retentionDays causes a 400 error.
 func (c *Client) SetTRU(ctx context.Context, namespace string, newTRU int) error {
-	// Fetch current state to get the resource_version.
-	nsResp, err := c.getNamespaceRaw(ctx, namespace)
+	getURL := fmt.Sprintf("%s/cloud/namespaces/%s", c.apiBaseURL, namespace)
+
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, getURL, nil)
 	if err != nil {
-		return fmt.Errorf("fetching resource_version before TRU update: %w", err)
+		return fmt.Errorf("building namespace GET request: %w", err)
 	}
-	resourceVersion := nsResp.Namespace.ResourceVersion
+	c.setAuthHeader(getReq)
 
-	url := fmt.Sprintf("%s/cloud/namespaces/%s", c.apiBaseURL, namespace)
+	getResp, err := c.httpClient.Do(getReq)
+	if err != nil {
+		return fmt.Errorf("fetching namespace before TRU update: %w", err)
+	}
+	getBody, _ := io.ReadAll(getResp.Body)
+	getResp.Body.Close()
 
-	payload := updateNamespacePayload{
-		Spec: updateNamespaceSpec{
-			CapacitySpec: updateCapacitySpec{
-				Provisioned: updateProvisioned{Value: float64(newTRU)},
-			},
+	if getResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("namespace GET returned %d: %s", getResp.StatusCode, string(getBody))
+	}
+
+	// Parse the full response as a generic map so we can preserve all spec fields.
+	var raw map[string]interface{}
+	if err := json.Unmarshal(getBody, &raw); err != nil {
+		return fmt.Errorf("parsing namespace response: %w", err)
+	}
+
+	nsMap, _ := raw["namespace"].(map[string]interface{})
+	resourceVersion, _ := nsMap["resourceVersion"].(string)
+	spec, _ := nsMap["spec"].(map[string]interface{})
+	if spec == nil {
+		return fmt.Errorf("namespace spec missing from GET response")
+	}
+
+	// Update only the capacitySpec.provisioned.value; leave all other fields intact.
+	spec["capacitySpec"] = map[string]interface{}{
+		"provisioned": map[string]interface{}{
+			"value": float64(newTRU),
 		},
-		ResourceVersion: resourceVersion,
 	}
 
-	body, err := json.Marshal(payload)
+	payload := map[string]interface{}{
+		"spec":            spec,
+		"resourceVersion": resourceVersion,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshaling TRU update payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
+	postURL := fmt.Sprintf("%s/cloud/namespaces/%s", c.apiBaseURL, namespace)
+	postReq, err := http.NewRequestWithContext(ctx, http.MethodPost, postURL, strings.NewReader(string(payloadBytes)))
 	if err != nil {
 		return fmt.Errorf("building TRU update request: %w", err)
 	}
-	c.setAuthHeader(req)
-	req.Header.Set("Content-Type", "application/json")
+	c.setAuthHeader(postReq)
+	postReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	postResp, err := c.httpClient.Do(postReq)
 	if err != nil {
 		return fmt.Errorf("calling TRU update API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer postResp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusAccepted {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("temporal API returned %d on TRU update: %s", resp.StatusCode, string(respBody))
+	if postResp.StatusCode != http.StatusOK && postResp.StatusCode != http.StatusNoContent && postResp.StatusCode != http.StatusAccepted {
+		respBody, _ := io.ReadAll(postResp.Body)
+		return fmt.Errorf("temporal API returned %d on TRU update: %s", postResp.StatusCode, string(respBody))
 	}
 
 	return nil
