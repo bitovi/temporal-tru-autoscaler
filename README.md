@@ -34,6 +34,12 @@ helm install temporal-tru-autoscaler bitovi/temporal-tru-autoscaler \
 
 ### 3. Create the credentials Secret
 
+The API key must belong to a Temporal Cloud service account with **two roles**:
+- **Account-level:** Metrics Read-Only (to query the APS metrics endpoint)
+- **Namespace-level:** Namespace Admin on the namespace being managed (to update provisioned TRU)
+
+Create the service account and key in the Temporal Cloud UI under **Settings → Service Accounts**, then:
+
 ```bash
 kubectl create secret generic temporal-cloud-api-key \
   --namespace temporal-autoscaler \

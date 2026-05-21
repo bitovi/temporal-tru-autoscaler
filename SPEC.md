@@ -175,8 +175,15 @@ The chart includes:
 
 ---
 
-## Open Questions
+## Verified API Details
 
-- Exact Temporal Cloud Prometheus metrics endpoint URL and metric names for APS — verify against Temporal Cloud docs before implementation
-- Exact Temporal Cloud API endpoint and payload shape for updating TRU level — verify against Temporal Cloud API reference
-- Cooldown tracking implementation: store `lastScaleTime` in the resource status (survives controller restarts) vs. in-memory only
+These were confirmed against the live Temporal Cloud API during implementation (2026-05-21).
+
+| Item | Value |
+|---|---|
+| Metrics endpoint | `https://metrics.temporal.io/v1/metrics` — returns all namespaces; filter by `temporal_namespace` label |
+| APS metric | `temporal_cloud_v1_total_action_count` (gauge) |
+| Read namespace | `GET https://saas-api.tmprl.cloud/cloud/namespaces/{namespace}` |
+| Update TRU | `POST https://saas-api.tmprl.cloud/cloud/namespaces/{namespace}` with the **full** current namespace spec (the API replaces the entire spec, so all fields must be present) with only `capacitySpec.provisioned.value` changed, plus `resourceVersion` |
+| Required API key roles | Account-level **Metrics Read-Only** + Namespace-level **Namespace Admin** |
+| Cooldown tracking | `lastScaleTime` stored in CR status — survives controller restarts |

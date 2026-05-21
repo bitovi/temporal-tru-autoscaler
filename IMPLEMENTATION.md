@@ -87,8 +87,9 @@ Reconcile triggered (every 30s, or on CR change)
 │    └─ Extract: spec.capacity_spec.provisioned.value → currentTRU
 │                resource_version  (saved for update)
 │
-├─ GET metrics.temporal.io/prometheus/metrics?namespace={ns}
-│    └─ Extract: temporal_cloud_v1_total_action_count → currentAPS
+├─ GET metrics.temporal.io/v1/metrics  (no namespace filter — returns all namespaces)
+│    └─ Extract: temporal_cloud_v1_total_action_count
+│              where label temporal_namespace == {ns} → currentAPS
 │
 ├─ utilization = currentAPS / (currentTRU × 500) × 100
 │
@@ -96,14 +97,14 @@ Reconcile triggered (every 30s, or on CR change)
 │    ├─ currentTRU >= maxTRU?        → Event: ScaleBlockedBounds
 │    ├─ within scaleUpCooldown?      → Event: ScaleBlockedCooldown
 │    └─ else → newTRU = NextValidTRU(currentTRU)
-│              POST /cloud/namespaces/{ns}
+│              POST /cloud/namespaces/{ns}  (full spec + updated capacitySpec)
 │              → Event: ScaledUp
 │
 ├─ utilization < scaleDownThreshold?
 │    ├─ currentTRU <= minTRU?        → Event: ScaleBlockedBounds
 │    ├─ within scaleDownCooldown?    → Event: ScaleBlockedCooldown
 │    └─ else → newTRU = PrevValidTRU(currentTRU)
-│              POST /cloud/namespaces/{ns}
+│              POST /cloud/namespaces/{ns}  (full spec + updated capacitySpec)
 │              → Event: ScaledDown
 │
 └─ Patch CR status (currentTRU, lastScaleTime, lastScaleDirection, conditions)
@@ -232,14 +233,16 @@ These were verified against the live Temporal Cloud documentation and proto defi
 |---|---|
 | APS per TRU | **500** |
 | Valid TRU values | **2, 3, 4, 6, 8, 10, 12** |
-| Metrics endpoint | `https://metrics.temporal.io/prometheus/metrics` (v1 OpenMetrics) |
-| APS metric | `temporal_cloud_v1_total_action_count` |
+| Metrics endpoint | `https://metrics.temporal.io/v1/metrics` (OpenMetrics v1, API key auth) |
+| APS metric | `temporal_cloud_v1_total_action_count` (gauge) |
+| Namespace label | `temporal_namespace` — filter by this label; no server-side namespace param |
 | APS limit metric | `temporal_cloud_v1_action_limit` |
 | Read namespace | `GET https://saas-api.tmprl.cloud/cloud/namespaces/{namespace}` |
 | Update TRU | `POST https://saas-api.tmprl.cloud/cloud/namespaces/{namespace}` |
-| Update payload | `spec.capacity_spec.provisioned.value` (float TRU) + `resource_version` |
+| Update payload | Full namespace `spec` (all existing fields preserved) with `capacitySpec.provisioned.value` updated + `resourceVersion` |
+| Required API key roles | Account-level **Metrics Read-Only** (for metrics endpoint) + Namespace-level **Namespace Admin** (for TRU updates) |
 
-> **Note:** The v0 PromQL metrics endpoint (`saas-api.tmprl.cloud/prometheus/metrics`) was deprecated 2026-04-02 and will be disabled 2026-10-05. This implementation uses the v1 endpoint.
+> **Note:** The v0 PromQL metrics endpoint (`saas-api.tmprl.cloud/prometheus/metrics`) was deprecated 2026-04-02 and will be disabled 2026-10-05. The v1 endpoint does not support server-side namespace filtering — the controller filters by the `temporal_namespace` label after fetching all metrics.
 
 ---
 
