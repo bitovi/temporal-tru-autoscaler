@@ -13,7 +13,7 @@ The operator watches your Temporal Cloud namespace's APS utilization and adjusts
 - Kubernetes cluster (any — local or cloud)
 - [Helm 3](https://helm.sh/docs/intro/install/)
 - A Temporal Cloud namespace in [**provisioned capacity mode**](https://docs.temporal.io/cloud/capacity-modes) (not on-demand)
-- A Temporal Cloud API key (Cloud UI → Settings → API Keys)
+- A Temporal Cloud service account API key with Metrics Read-Only (account) and Namespace Admin (namespace) roles — see [Step 3](#3-create-the-credentials-secret)
 
 ## Installation
 
@@ -34,11 +34,20 @@ helm install temporal-tru-autoscaler bitovi/temporal-tru-autoscaler \
 
 ### 3. Create the credentials Secret
 
-The API key must belong to a Temporal Cloud service account with **two roles**:
-- **Account-level:** Metrics Read-Only (to query the APS metrics endpoint)
-- **Namespace-level:** Namespace Admin on the namespace being managed (to update provisioned TRU)
+The autoscaler needs a **service account** API key (not a personal API key) with two specific roles — one to read metrics, one to update TRU. Using a key that's missing either role is the most common setup mistake.
 
-Create the service account and key in the Temporal Cloud UI under **Settings → Service Accounts**, then:
+#### 3a. Create the service account and key
+
+1. Go to **Temporal Cloud UI → Settings → Service Accounts**
+2. Click **Create Service Account** and give it a name (e.g. `tru-autoscaler`)
+3. Assign **both** of the following roles:
+   - **Account-level:** `Metrics Read-Only` — required to query the APS metrics endpoint
+   - **Namespace-level:** `Namespace Admin` on the namespace you're managing — required to update provisioned TRU
+4. Click **Create**, then **Generate API Key** and copy it (shown only once)
+
+> ⚠️ If you only assign `Metrics Read-Only`, the autoscaler will read APS correctly but get a 403 Unauthorized when it tries to scale. Both roles must be on the same service account.
+
+#### 3b. Store the key as a Kubernetes Secret
 
 ```bash
 kubectl create secret generic temporal-cloud-api-key \
